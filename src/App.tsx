@@ -16,10 +16,10 @@ function App() {
     setCreateLoading(true);
     setCreateResult('');
     
-    // Giả lập độ trễ mạng lưới Blockchain (2s)
+    // Simulate Blockchain Network Delay (2s)
     setTimeout(() => {
       setCreateLoading(false);
-      setCreateResult('Thành công! Bounty ID: #1 đã được tạo trên GenLayer.');
+      setCreateResult('Success! Bounty ID: #1 has been created on GenLayer.');
     }, 2000);
   };
 
@@ -29,17 +29,17 @@ function App() {
     setClaimResult('');
     setClaimError(false);
     
-    // Giả lập độ trễ gọi AI Validator của GenLayer (8s)
+    // Simulate GenLayer AI Validator Delay (4s)
     setTimeout(() => {
       setClaimLoading(false);
-      // Giả lập kết quả trả về từ AI
-      const isSuccess = Math.random() > 0.3; // 70% tỉ lệ thành công
+      // Simulate AI Result
+      const isSuccess = Math.random() > 0.3; // 70% success rate
       
       if (isSuccess) {
-        setClaimResult('Success: Đã giải ngân! (AI: "Code chất lượng tốt, xử lý đúng Issue yêu cầu. Điểm: 8.5/10")');
+        setClaimResult('Success: Funds disbursed! (AI: "High-quality code, correctly resolves the requested Issue. Score: 8.5/10")');
       } else {
         setClaimError(true);
-        setClaimResult('Failed: Chưa đạt yêu cầu. (AI: "Pull Request không giải quyết đúng trọng tâm của Issue. Điểm: 4.0/10")');
+        setClaimResult('Failed: Requirements not met. (AI: "Pull Request does not address the core of the Issue. Score: 4.0/10")');
       }
     }, 4000);
   };
@@ -76,7 +76,7 @@ function App() {
             </div>
           </div>
           <button type="submit" className="btn-primary" disabled={createLoading}>
-            {createLoading ? <div className="loader"></div> : 'Tạo Bounty'}
+            {createLoading ? <div className="loader"></div> : 'Create Bounty'}
           </button>
         </form>
         {createResult && (
@@ -102,7 +102,7 @@ function App() {
             <input type="text" placeholder="0x..." required defaultValue="0xDev" />
           </div>
           <button type="submit" className="btn-primary" disabled={claimLoading}>
-            {claimLoading ? <div className="loader"></div> : 'Nộp Code & Chờ AI Chấm'}
+            {claimLoading ? <div className="loader"></div> : 'Submit Code & Await AI Evaluation'}
           </button>
         </form>
         {claimResult && (
