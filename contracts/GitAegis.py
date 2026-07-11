@@ -1,141 +1,92 @@
 # v0.2.16
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
-from genlayer import *
+
 import json
-from dataclasses import dataclass
+from genlayer import *
 
-@allow_storage
-@dataclass
-class BountyData:
-    maintainer: str
-    issue_url: str
-    reward_amount: bigint
-    min_score: bigint
-    status: str
-    contributor: str
-    feedback: str
-
-class GitAegis(gl.Contract):
-    bounties: TreeMap[str, BountyData]
-    next_bounty_id: bigint
-    contract_balance: bigint
+class Contract(gl.Contract):
+    bounties_str: str
+    next_id_str: str
 
     def __init__(self):
-        self.next_bounty_id = bigint(1)
-        self.contract_balance = bigint(0)
-        
-    @gl.public.write
-    def fund_contract(self) -> None:
-        amt = gl.message.value if hasattr(gl.message, "value") else bigint(0)
-        self.contract_balance += amt
+        self.bounties_str = "{}"
+        self.next_id_str = "1"
 
-    @gl.public.write
-    def create_bounty(self, maintainer: str, issue_url: str, min_score: int) -> str:
-        reward = gl.message.value if hasattr(gl.message, "value") else bigint(0)
-        
-        if min_score < 1 or min_score > 100:
-            raise gl.vm.UserError("min_score must be between 1 and 100")
+    @gl.public.write.payable
+    def create_bounty(self, issue_url: str, min_score: int) -> str:
+        amt = gl.message.value
+        if amt == u256(0):
+            raise gl.vm.UserError("Reward amount must be greater than 0")
             
-        bounty_id = str(self.next_bounty_id)
+        bounties = json.loads(self.bounties_str)
+        b_id = self.next_id_str
+        self.next_id_str = str(int(self.next_id_str) + 1)
         
-        self.bounties[bounty_id] = BountyData(
-            maintainer=maintainer,
-            issue_url=issue_url,
-            reward_amount=reward,
-            min_score=bigint(min_score),
-            status="OPEN",
-            contributor="",
-            feedback=""
-        )
-        self.next_bounty_id += bigint(1)
-        return bounty_id
+        bounties[b_id] = {
+            "maintainer": str(gl.message.sender_address.as_hex),
+            "issue_url": issue_url,
+            "reward_amount": str(amt),
+            "min_score": min_score,
+            "status": "OPEN",
+            "contributor": "",
+            "pr_url": ""
+        }
+        
+        self.bounties_str = json.dumps(bounties)
+        return b_id
 
     @gl.public.write
-    def claim_bounty(self, bounty_id: str, pr_url: str) -> None:
-        if bounty_id not in self.bounties:
+    def claim_bounty(self, b_id: str, pr_url: str, contributor: str) -> None:
+        bounties = json.loads(self.bounties_str)
+        if b_id not in bounties:
             raise gl.vm.UserError("Bounty not found")
             
-        bounty = self.bounties[bounty_id]
-        
-        if bounty.status != "OPEN":
-            raise gl.vm.UserError("Bounty is not OPEN")
-
-        iss_url = bounty.issue_url
-        pr_link = pr_url
-
-        def leader_fn() -> str:
-            try:
-                issue_content = gl.nondet.web.render(iss_url, mode="text")[:4000]
-                pr_content = gl.nondet.web.render(pr_link, mode="text")[:4000]
-            except Exception:
-                return json.dumps({"is_match": False, "score": 0, "feedback": "Fetch failed"}, sort_keys=True)
-                
-            prompt = (
-                "You are a Senior Code Auditor. Match the GitHub Issue requirements with the PR code.\n"
-                "ISSUE:\n" + issue_content + "\n"
-                "PR:\n" + pr_content + "\n"
-                "Return exactly a JSON object: {\"is_match\": true/false, \"score\": integer 0-100, \"feedback\": \"brief reason\"}"
-            )
+        b = bounties[b_id]
+        if b["status"] != "OPEN":
+            raise gl.vm.UserError("Bounty is not open")
             
-            ai_resp = gl.nondet.exec_prompt(prompt)
+        b["pr_url"] = pr_url
+        b["contributor"] = contributor
+        
+        def _ai_resolution() -> int:
+            issue_text = gl.nondet.web.render(b["issue_url"])
+            pr_text = gl.nondet.web.render(b["pr_url"])
             
+            prompt = f"""
+            Act as an expert Code Reviewer.
+            Original Issue: {issue_text}
+            Submitted Pull Request: {pr_text}
+            
+            Evaluate the PR against the Issue. Does it successfully resolve the issue?
+            Assign a score from 1 to 100 based on quality and functional correctness.
+            
+            Output valid JSON exactly like this: {{"score": 85, "feedback": "Your reason here"}}
+            """
+            
+            res = gl.nondet.exec_prompt(prompt)
             try:
-                parsed = json.loads(ai_resp)
-                match = bool(parsed.get("is_match", False))
-                try:
-                    score = int(parsed.get("score", 0))
-                except Exception:
-                    score = 0
-                feedback = str(parsed.get("feedback", ""))[:200]
-                return json.dumps({"is_match": match, "score": score, "feedback": feedback}, sort_keys=True)
-            except Exception:
-                return json.dumps({"is_match": False, "score": 0, "feedback": "Parse failed"}, sort_keys=True)
+                result_json = json.loads(res)
+                return int(result_json.get("score", 0))
+            except:
+                return 0
 
-        def validator_fn(leader_res) -> bool:
-            if not isinstance(leader_res, gl.vm.Return):
-                return False
-            try:
-                l_data = json.loads(leader_res.value)
-                v_data = json.loads(leader_fn())
-                
-                # Check semantic match
-                if l_data.get("is_match") != v_data.get("is_match"): return False
-                
-                # Banding score consensus
-                def band(s: int) -> int:
-                    if s < 50: return 0
-                    if s < 80: return 1
-                    return 2
-                    
-                if band(int(l_data.get("score", 0))) != band(int(v_data.get("score", 0))): return False
-                return True
-            except Exception:
-                return False
+        # Execute non-deterministic AI logic inside Equivalence Principle
+        score = gl.eq_principle.strict_eq(_ai_resolution)
+        
+        amt = u256(int(b["reward_amount"]))
 
-        final_res = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
-        ai_result = json.loads(final_res)
-        
-        is_match = ai_result["is_match"]
-        score = int(ai_result["score"])
-        
-        if is_match and score >= int(bounty.min_score):
-            bounty.status = "RESOLVED"
-            bounty.contributor = str(gl.message.sender)
-            bounty.feedback = ai_result["feedback"]
+        if score >= b["min_score"]:
+            b["status"] = "RESOLVED"
+            _Recipient(Address(b["contributor"])).emit_transfer(value=amt)
         else:
-            bounty.feedback = ai_result["feedback"]
+            b["status"] = "FAILED"
+            _Recipient(Address(b["maintainer"])).emit_transfer(value=amt)
+            
+        self.bounties_str = json.dumps(bounties)
 
     @gl.public.view
-    def get_bounty(self, bounty_id: str) -> str:
-        if bounty_id in self.bounties:
-            b = self.bounties[bounty_id]
-            return json.dumps({
-                "maintainer": b.maintainer,
-                "issue_url": b.issue_url,
-                "reward_amount": int(b.reward_amount),
-                "min_score": int(b.min_score),
-                "status": b.status,
-                "contributor": b.contributor,
-                "feedback": b.feedback
-            })
+    def get_bounty(self, b_id: str) -> str:
+        bounties = json.loads(self.bounties_str)
+        if b_id in bounties:
+            return json.dumps(bounties[b_id])
         return "{}"
