@@ -39,7 +39,7 @@ function App() {
         args: [issueUrl, minScore],
         value: BigInt(rewardAmount)
       });
-      setCreateResult(`Success! Bounty created on GenLayer. (Tx: ${res?.hash || res})`);
+      setCreateResult(`Success! Bounty created on GenLayer. (Response: ${JSON.stringify(res) || 'Sent'})`);
     } catch (err: any) {
       setCreateResult(`Error: ${err.message}`);
     }
@@ -58,7 +58,7 @@ function App() {
         functionName: 'claim_bounty',
         args: [bountyId, prUrl, contributor]
       });
-      setClaimResult(`Evaluation Complete! If score passed, funds were transferred via gl.transfer(). Tx: ${res?.hash || res}`);
+      setClaimResult(`Evaluation Complete! If score passed, funds were transferred via gl.transfer(). Response: ${JSON.stringify(res) || 'Sent'}`);
     } catch (err: any) {
       setClaimError(true);
       setClaimResult(`Error: ${err.message}`);
